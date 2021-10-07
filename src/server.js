@@ -1,9 +1,10 @@
 import http from "http";
 // import WebSocket from "ws";
-import SocketIO from "socket.io";
+import { Server} from "socket.io";
 import express from "express";
 import { parse } from "path";
 import { SSL_OP_CISCO_ANYCONNECT } from "constants";
+import { instrument } from "@socket.io/admin-ui";
  
 const app = express();
 
@@ -13,10 +14,16 @@ app.use("/public", express.static(__dirname + "/public"));
 app.get("/", (_, res) => res.render("home"));
 app.get("/*", (_, res) => res.redirect("/"));
 
-const handleListen = () => console.log('Listening on http://localhost:3000');
-
 const httpServer = http.createServer(app);
-const sis = SocketIO(httpServer);
+const sis = new Server(httpServer, {
+    cors: {
+        origin: ["https://admin.socket.io"],
+        credentials: true,
+    },
+});
+instrument(sis, {
+    auth: false,
+});
 
 function publicRooms(){
     const {
@@ -32,6 +39,11 @@ function publicRooms(){
     });
     return publicRooms;
 }
+
+function countRoom(roomName) {
+    return sis.sockets.adapter.rooms.get(roomName)?.size
+}
+
 sis.on("connection", (socket) => {
     socket["nickname"] = "Anonymous";
     sis.sockets.emit("room_change", publicRooms());
@@ -42,7 +54,7 @@ sis.on("connection", (socket) => {
     socket.on("enter_room", (roomName, done) => {
         socket.join(roomName);
         done();
-        socket.to(roomName).emit("welcome", socket.nickname);
+        socket.to(roomName).emit("welcome", socket.nickname, countRoom(roomName));
         sis.sockets.emit("room_change", publicRooms());
     });
     socket.on("disconnecting", () => {
@@ -81,7 +93,7 @@ sis.on("connection", (socket) => {
 //     });
 // });
 
-
+const handleListen = () => console.log(`Listening on http://localhost:3000`);
 httpServer.listen(3000, handleListen);
 
 
